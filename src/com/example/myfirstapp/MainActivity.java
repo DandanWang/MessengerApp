@@ -1,10 +1,16 @@
 package com.example.myfirstapp;
 
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
+import java.util.Queue;
+import java.util.concurrent.ArrayBlockingQueue;
 
 import android.app.Activity;
 import android.content.Intent;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.support.v4.app.Fragment;
 import android.support.v7.app.ActionBarActivity;
 import android.telephony.SmsManager;
@@ -15,20 +21,41 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.TextView;
 import android.widget.Toast;
 
 public class MainActivity extends Activity {
 	private EditText numberText;
 	private EditText contentText;
+	private TextView displayText;
+	private TcpSender tcpSender;
+	private Thread senderThread;
+	private TcpReceiver tcpReceiver;
+	private Thread receiverThread;
+	private Queue<String> uiMessageQueue;
+	private Handler mHandler;
 	
 	public void onCreate(Bundle savedInstanceState){
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.fragment_main);
 		
+		mHandler = new Handler(Looper.getMainLooper());
+		displayText = (TextView) this.findViewById(R.id.display_message);
 		numberText=(EditText) this.findViewById(R.id.To);
 		contentText=(EditText) this.findViewById(R.id.edit_message);
 		Button button=(Button) this.findViewById(R.id.button_send);
 		button.setOnClickListener(new ButtonClickListener());
+		
+		// Create a queue to store incoming message
+		uiMessageQueue = new ArrayBlockingQueue<>(50);
+		// Launch TCP Sender
+		tcpSender = new TcpSender();
+		senderThread = new Thread(tcpSender);
+		senderThread.start();
+		// Launch TCP Receiver
+		tcpReceiver = new TcpReceiver(tcpSender, uiMessageQueue);
+		receiverThread = new Thread(tcpReceiver);
+		receiverThread.start();
 	}
 	
 	private final class ButtonClickListener implements View.OnClickListener{
@@ -36,11 +63,7 @@ public class MainActivity extends Activity {
 		public void onClick(View v){
 			String number=numberText.getText().toString();
 			String content=contentText.getText().toString();
-			SmsManager manager=SmsManager.getDefault();
-			ArrayList<String> texts=manager.divideMessage(content);
-			for(String text:texts){
-				manager.sendTextMessage(number,null,text,null,null);
-			}
+			tcpSender.send(content);
 			Toast.makeText(MainActivity.this,R.string.success,Toast.LENGTH_LONG).show();;
 		}
 		
